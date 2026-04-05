@@ -12,16 +12,20 @@ import {
   FileSpreadsheet,
   FileText,
   FileVideo,
+  Pencil,
+  Save,
   Share2,
+  Upload,
   X,
 } from 'lucide-react';
 import { Article } from '../types';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { useNow } from '@/hooks/use-now';
 import { getTimeWindowState, formatTimestamp } from '@/lib/time-window';
-import { CountdownBar, LiveCountdownBar } from './CountdownBar';
+import { LiveCountdownBar } from './CountdownBar';
 import { renderSimpleMarkdown } from '../lib/simple-markdown';
 
 const DEFAULT_BADGE_SRC = '/icon.png';
@@ -34,7 +38,27 @@ interface NoticeDetailModalProps {
   canPrev: boolean;
   canNext: boolean;
   shareUrl: string;
+  onArticleSaved: () => Promise<void>;
 }
+
+type EditorAttachment = {
+  name: string;
+  url: string;
+  type?: string;
+  pendingUpload?: {
+    contentType?: string;
+    base64: string;
+  };
+};
+
+type EditorDraft = {
+  guid: string;
+  schoolSlug: string;
+  title: string;
+  description: string;
+  markdown: string;
+  attachments: EditorAttachment[];
+};
 
 export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = React.memo(({
   article,
@@ -44,12 +68,32 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = React.memo(({
   canPrev,
   canNext,
   shareUrl,
+  onArticleSaved,
 }) => {
   const { toast } = useToast();
   const [badgeSrc, setBadgeSrc] = React.useState(DEFAULT_BADGE_SRC);
   const openedAtRef = React.useRef(0);
   const modalBodyRef = React.useRef<HTMLDivElement | null>(null);
   const [contentReady, setContentReady] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const loadedDraftRef = React.useRef<EditorDraft | null>(null);
+  const [editorAvailable, setEditorAvailable] = React.useState(false);
+  const [editorAuthRequired, setEditorAuthRequired] = React.useState(false);
+  const [editorDraft, setEditorDraft] = React.useState<EditorDraft | null>(null);
+  const [isEditing, setIsEditing] = React.useState(false);
+  const [isSaving, setIsSaving] = React.useState(false);
+  const [isUploading, setIsUploading] = React.useState(false);
+
+  const getEditorKey = React.useCallback(() => localStorage.getItem('editor-access-key') || '', []);
+
+  const fetchEditor = React.useCallback(async (input: string, init?: RequestInit) => {
+    const headers = new Headers(init?.headers || {});
+    const editorKey = getEditorKey();
+    if (editorKey) {
+      headers.set('x-editor-key', editorKey);
+    }
+    return fetch(input, { ...init, headers });
+  }, [getEditorKey]);
 
   const isTouchDevice = React.useMemo(
     () => typeof window !== 'undefined' && window.matchMedia('(hover: none) and (pointer: coarse)').matches,
@@ -59,6 +103,11 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = React.memo(({
   React.useEffect(() => {
     if (!article) {
       setContentReady(false);
+      setIsEditing(false);
+      setEditorAvailable(false);
+      setEditorAuthRequired(false);
+      setEditorDraft(null);
+      loadedDraftRef.current = null;
       return;
     }
     openedAtRef.current = Date.now();
@@ -71,8 +120,9 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = React.memo(({
   const handleOverlayClick = React.useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return;
     if (Date.now() - openedAtRef.current < 250) return;
+    if (isEditing) return;
     onClose();
-  }, [onClose]);
+  }, [isEditing, onClose]);
 
   // Use a periodically-refreshed now so timing badges update while the modal is open
   const hasTimeWindow = Boolean(article?.startAt || article?.endAt);
@@ -97,9 +147,9 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = React.memo(({
     if (!article) return undefined;
 
     const handleKeydown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-      if (event.key === 'ArrowLeft' && canPrev) onPrev();
-      if (event.key === 'ArrowRight' && canNext) onNext();
+      if (event.key === 'Escape' && !isEditing) onClose();
+      if (event.key === 'ArrowLeft' && canPrev && !isEditing) onPrev();
+      if (event.key === 'ArrowRight' && canNext && !isEditing) onNext();
     };
 
     const previousOverflow = document.body.style.overflow;
@@ -123,7 +173,141 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = React.memo(({
       lockedViewports.forEach(({ el, prev }) => { el.style.overflow = prev; });
       window.removeEventListener('keydown', handleKeydown);
     };
-  }, [article, onClose, onPrev, onNext, canPrev, canNext]);
+  }, [article, onClose, onPrev, onNext, canPrev, canNext, isEditing]);
+
+  React.useEffect(() => {
+    if (!article?.guid || !article.schoolSlug) return undefined;
+    let cancelled = false;
+
+    const loadDraft = async () => {
+      try {
+        const response = await fetchEditor(`/__editor/article?guid=${encodeURIComponent(article.guid)}&schoolSlug=${encodeURIComponent(article.schoolSlug || '')}`);
+        if (response.status === 401) {
+          setEditorAvailable(false);
+          setEditorAuthRequired(true);
+          return;
+        }
+        if (!response.ok) {
+          throw new Error(`编辑接口不可用 (${response.status})`);
+        }
+        const data = await response.json() as { draft?: EditorDraft };
+        if (cancelled || !data.draft) return;
+        loadedDraftRef.current = data.draft;
+        setEditorDraft(data.draft);
+        setEditorAvailable(true);
+        setEditorAuthRequired(false);
+      } catch {
+        if (cancelled) return;
+        loadedDraftRef.current = null;
+        setEditorDraft(null);
+        setEditorAvailable(false);
+        setEditorAuthRequired(false);
+      }
+    };
+
+    void loadDraft();
+    return () => {
+      cancelled = true;
+    };
+  }, [article?.guid, article?.schoolSlug]);
+
+  const updateDraft = React.useCallback((patch: Partial<EditorDraft>) => {
+    setEditorDraft((prev) => (prev ? { ...prev, ...patch } : prev));
+  }, []);
+
+  const readFileAsBase64 = React.useCallback((file: File) => {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = typeof reader.result === 'string' ? reader.result : '';
+        resolve(result.split(',').pop() || '');
+      };
+      reader.onerror = () => reject(reader.error || new Error('文件读取失败'));
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const handleUploadFiles = React.useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []) as File[];
+    if (!files.length || !editorDraft) return;
+
+    setIsUploading(true);
+    try {
+      const pendingAttachments = await Promise.all(files.map(async (file) => ({
+        name: file.name,
+        url: `pending://${file.name}`,
+        type: file.type || file.name.split('.').pop() || 'file',
+        pendingUpload: {
+          contentType: file.type,
+          base64: await readFileAsBase64(file),
+        },
+      })));
+      updateDraft({ attachments: [...editorDraft.attachments, ...pendingAttachments] });
+      toast({ description: '附件已加入待保存列表' });
+    } catch (error) {
+      toast({ description: error instanceof Error ? error.message : '附件上传失败', variant: 'destructive' });
+    } finally {
+      setIsUploading(false);
+      event.target.value = '';
+    }
+  }, [editorDraft, readFileAsBase64, toast, updateDraft]);
+
+  const handleEditorLogin = React.useCallback(async () => {
+    const value = window.prompt('请输入编辑访问密钥');
+    if (!value) return;
+    localStorage.setItem('editor-access-key', value.trim());
+    if (!article?.guid || !article.schoolSlug) return;
+    try {
+      const response = await fetchEditor(`/__editor/article?guid=${encodeURIComponent(article.guid)}&schoolSlug=${encodeURIComponent(article.schoolSlug)}`);
+      if (response.status === 401) {
+        throw new Error('访问密钥不正确');
+      }
+      if (!response.ok) {
+        throw new Error(`编辑接口不可用 (${response.status})`);
+      }
+      const data = await response.json() as { draft?: EditorDraft };
+      if (!data.draft) {
+        throw new Error('编辑数据为空');
+      }
+      loadedDraftRef.current = data.draft;
+      setEditorDraft(data.draft);
+      setEditorAvailable(true);
+      setEditorAuthRequired(false);
+      setIsEditing(true);
+      toast({ description: '编辑授权成功' });
+    } catch (error) {
+      toast({ description: error instanceof Error ? error.message : '编辑授权失败', variant: 'destructive' });
+    }
+  }, [article?.guid, article?.schoolSlug, fetchEditor, toast]);
+
+  const handleSave = React.useCallback(async () => {
+    if (!editorDraft) return;
+    setIsSaving(true);
+    try {
+      const response = await fetchEditor('/__editor/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editorDraft),
+      });
+      const data = await response.json() as { ok?: boolean; error?: string };
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || '保存失败');
+      }
+      await onArticleSaved();
+      loadedDraftRef.current = editorDraft;
+      setIsEditing(false);
+      toast({ description: '卡片已保存并重新编译' });
+    } catch (error) {
+      toast({ description: error instanceof Error ? error.message : '保存失败', variant: 'destructive' });
+    } finally {
+      setIsSaving(false);
+    }
+  }, [editorDraft, fetchEditor, onArticleSaved, toast]);
+
+  const handleCancelEditing = React.useCallback(() => {
+    setIsEditing(false);
+    setEditorDraft(loadedDraftRef.current);
+  }, []);
 
   const handleShare = async () => {
     if (!article) return;
@@ -234,6 +418,43 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = React.memo(({
 
   const actionButtons = (
     <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
+      {editorAuthRequired && !isEditing && (
+        <Button
+          variant="outline"
+          className="gap-1.5 md:gap-2 h-8 md:h-10 px-2.5 md:px-3 text-xs md:text-sm"
+          onClick={handleEditorLogin}
+        >
+          <Pencil className="h-3.5 w-3.5 md:h-4 md:w-4" /> 编辑登录
+        </Button>
+      )}
+      {editorAvailable && !isEditing && (
+        <Button
+          variant="outline"
+          className="gap-1.5 md:gap-2 h-8 md:h-10 px-2.5 md:px-3 text-xs md:text-sm"
+          onClick={() => setIsEditing(true)}
+        >
+          <Pencil className="h-3.5 w-3.5 md:h-4 md:w-4" /> 编辑
+        </Button>
+      )}
+      {isEditing && (
+        <>
+          <Button
+            variant="outline"
+            className="h-8 md:h-10 px-2.5 md:px-3 text-xs md:text-sm"
+            onClick={handleCancelEditing}
+            disabled={isSaving || isUploading}
+          >
+            取消
+          </Button>
+          <Button
+            className="gap-1.5 md:gap-2 h-8 md:h-10 px-2.5 md:px-3 text-xs md:text-sm"
+            onClick={handleSave}
+            disabled={isSaving || isUploading || !editorDraft}
+          >
+            <Save className="h-3.5 w-3.5 md:h-4 md:w-4" /> {isSaving ? '保存中' : '保存'}
+          </Button>
+        </>
+      )}
       <Button variant="ghost" className="gap-1.5 md:gap-2 h-8 md:h-10 px-2.5 md:px-3 text-xs md:text-sm" onClick={handleShare}>
         <Share2 className="h-3.5 w-3.5 md:h-4 md:w-4" /> 分享
       </Button>
@@ -334,15 +555,102 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = React.memo(({
 
                 <h2 className="text-2xl md:text-4xl font-black leading-tight mb-3 md:mb-4 break-words [overflow-wrap:anywhere]">{article.title}</h2>
 
-                {contentReady ? (
-                  <>
-                    <div
-                      className="text-[13px] md:text-base leading-relaxed text-muted-foreground mb-5 md:mb-6 break-words [overflow-wrap:anywhere] [&_a]:text-primary [&_a]:underline [&_strong]:font-semibold"
-                      dangerouslySetInnerHTML={{ __html: descriptionHtml }}
-                    />
+                 {contentReady ? (
+                   <>
+                     {isEditing && editorDraft ? (
+                       <section className="mb-5 md:mb-6 rounded-2xl border border-primary/20 bg-primary/5 p-3 md:p-4 space-y-4">
+                         <div className="flex items-center justify-between gap-3">
+                           <div>
+                             <h3 className="text-sm md:text-base font-black">编辑卡片</h3>
+                             <p className="text-xs text-muted-foreground">保存后会直接改写 Markdown 文件，并重建 `generated/content-data.json`。</p>
+                           </div>
+                         </div>
 
-                    {article.attachments && article.attachments.length > 0 && (
-                  <section className="mb-5 md:mb-6 rounded-xl border bg-muted/20 p-3 md:p-4 overflow-x-auto">
+                         <label className="block space-y-2">
+                           <span className="text-xs font-bold text-muted-foreground">标题</span>
+                           <Input
+                             value={editorDraft.title}
+                             onChange={(event) => updateDraft({ title: event.target.value })}
+                             disabled={isSaving}
+                           />
+                         </label>
+
+                         <label className="block space-y-2">
+                           <span className="text-xs font-bold text-muted-foreground">摘要</span>
+                           <textarea
+                             value={editorDraft.description}
+                             onChange={(event) => updateDraft({ description: event.target.value })}
+                             disabled={isSaving}
+                             rows={3}
+                             className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                           />
+                         </label>
+
+                         <div className="space-y-2">
+                           <div className="flex items-center justify-between gap-3">
+                             <span className="text-xs font-bold text-muted-foreground">附件</span>
+                             <>
+                               <input
+                                 ref={fileInputRef}
+                                 type="file"
+                                 multiple
+                                 className="hidden"
+                                 onChange={handleUploadFiles}
+                               />
+                               <Button
+                                 type="button"
+                                 variant="outline"
+                                 size="sm"
+                                 onClick={() => fileInputRef.current?.click()}
+                                 disabled={isSaving || isUploading}
+                               >
+                                 <Upload className="h-4 w-4" /> {isUploading ? '上传中' : '添加文档'}
+                               </Button>
+                             </>
+                           </div>
+                           <div className="space-y-2">
+                             {editorDraft.attachments.length ? editorDraft.attachments.map((attachment) => (
+                               <div key={`${attachment.url}-${attachment.name}`} className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2 text-xs md:text-sm">
+                                 <div className="min-w-0">
+                                   <p className="font-semibold break-all">{attachment.name}</p>
+                                   <p className="text-muted-foreground break-all">{attachment.pendingUpload ? '待随本次保存一并上传' : attachment.url}</p>
+                                 </div>
+                                 <Button
+                                   type="button"
+                                   variant="outline"
+                                   size="sm"
+                                   onClick={() => updateDraft({ attachments: editorDraft.attachments.filter((item) => item.url !== attachment.url) })}
+                                   disabled={isSaving || isUploading}
+                                 >
+                                   删除
+                                 </Button>
+                               </div>
+                             )) : (
+                               <div className="rounded-lg border border-dashed bg-background px-3 py-4 text-xs text-muted-foreground">暂无附件，可直接上传文档加入卡片。</div>
+                             )}
+                           </div>
+                         </div>
+
+                         <label className="block space-y-2">
+                           <span className="text-xs font-bold text-muted-foreground">正文 Markdown</span>
+                           <textarea
+                             value={editorDraft.markdown}
+                             onChange={(event) => updateDraft({ markdown: event.target.value })}
+                             disabled={isSaving}
+                             rows={16}
+                             className="flex min-h-[320px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                           />
+                         </label>
+                       </section>
+                     ) : (
+                       <div
+                         className="text-[13px] md:text-base leading-relaxed text-muted-foreground mb-5 md:mb-6 break-words [overflow-wrap:anywhere] [&_a]:text-primary [&_a]:underline [&_strong]:font-semibold"
+                         dangerouslySetInnerHTML={{ __html: descriptionHtml }}
+                       />
+                     )}
+
+                     {!isEditing && article.attachments && article.attachments.length > 0 && (
+                   <section className="mb-5 md:mb-6 rounded-xl border bg-muted/20 p-3 md:p-4 overflow-x-auto">
                     <h3 className="mb-2.5 md:mb-3 text-[10px] md:text-xs font-black uppercase tracking-widest text-muted-foreground">附件下载</h3>
                     <div className="space-y-1.5 md:space-y-2">
                       {article.attachments.map((attachment) => {
@@ -393,16 +701,20 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = React.memo(({
                   </section>
                 )}
 
-                <p className="mb-3 md:mb-4 text-xs md:text-sm italic text-muted-foreground">以下为通知原文：</p>
+                 {!isEditing && (
+                   <>
+                     <p className="mb-3 md:mb-4 text-xs md:text-sm italic text-muted-foreground">以下为通知原文：</p>
 
-                <article className="prose prose-slate max-w-none text-[13px] md:text-base leading-relaxed dark:prose-invert overflow-x-hidden prose-pre:max-w-full prose-pre:overflow-x-auto prose-pre:whitespace-pre-wrap prose-code:break-all prose-p:break-words prose-p:[overflow-wrap:anywhere] prose-li:break-words prose-li:[overflow-wrap:anywhere] prose-headings:break-words prose-headings:[overflow-wrap:anywhere] prose-a:break-all prose-img:max-w-full prose-table:block prose-table:max-w-full prose-table:overflow-x-auto">
-                  <div dangerouslySetInnerHTML={{ __html: sanitizedContent }} />
-                </article>
+                     <article className="prose prose-slate max-w-none text-[13px] md:text-base leading-relaxed dark:prose-invert overflow-x-hidden prose-pre:max-w-full prose-pre:overflow-x-auto prose-pre:whitespace-pre-wrap prose-code:break-all prose-p:break-words prose-p:[overflow-wrap:anywhere] prose-li:break-words prose-li:[overflow-wrap:anywhere] prose-headings:break-words prose-headings:[overflow-wrap:anywhere] prose-a:break-all prose-img:max-w-full prose-table:block prose-table:max-w-full prose-table:overflow-x-auto">
+                       <div dangerouslySetInnerHTML={{ __html: sanitizedContent }} />
+                     </article>
 
-                <p className="mt-3 md:mt-4 text-right text-xs md:text-sm italic text-muted-foreground">{`———来源：${sourceChannelText}、发送者：${sourceSenderText}`}</p>
-                  </>
-                ) : (
-                  <div className="py-8 text-center text-xs text-muted-foreground">加载中…</div>
+                     <p className="mt-3 md:mt-4 text-right text-xs md:text-sm italic text-muted-foreground">{`———来源：${sourceChannelText}、发送者：${sourceSenderText}`}</p>
+                   </>
+                 )}
+                   </>
+                 ) : (
+                   <div className="py-8 text-center text-xs text-muted-foreground">加载中…</div>
                 )}
 
               </div>
@@ -421,15 +733,15 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = React.memo(({
               {/* Desktop: date | nav | actions in one row */}
               <div className="hidden lg:flex items-center justify-between gap-3">
                 {dateDisplay}
-                <div className="flex items-center gap-2">{navButtons}</div>
-                {actionButtons}
-              </div>
-            </footer>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
+                 <div className="flex items-center gap-2">{navButtons}</div>
+                 {actionButtons}
+               </div>
+             </footer>
+           </motion.div>
+         </motion.div>
+       )}
+     </AnimatePresence>
+   );
 });
 
 NoticeDetailModal.displayName = 'NoticeDetailModal';

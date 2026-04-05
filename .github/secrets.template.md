@@ -14,6 +14,18 @@
 | `CLOUDFLARE_PAGES_TEST_URL` | test 分支预览环境完整 HTTPS URL，不带末尾 `/` | `https://test.jxnupublish-9by.pages.dev` |
 | `CLOUDFLARE_PAGES_URL` | main 分支生产环境完整 HTTPS URL，不带末尾 `/` | `https://jxnupublish-9by.pages.dev` |
 
+## Required (Pages Functions editor)
+
+These are configured in Cloudflare Pages project settings, not in GitHub Actions secrets.
+
+| Name | Purpose | Example |
+| --- | --- | --- |
+| `GITHUB_EDITOR_TOKEN` | GitHub token with `contents:write` permission for this repo | `github_pat_***` |
+| `GITHUB_REPO_OWNER` | Repository owner | `your-org-or-user` |
+| `GITHUB_REPO_NAME` | Repository name | `JXNU-PUBLISH` |
+| `GITHUB_EDITOR_BRANCH` | Branch to receive editor commits | `test` |
+| `EDITOR_ACCESS_KEY` | Optional shared key required by `/__editor/*` APIs | `set-a-strong-random-string` |
+
 ## Required (R2 attachments)
 
 | Name | Value format | Example |

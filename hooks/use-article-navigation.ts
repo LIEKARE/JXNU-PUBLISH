@@ -7,7 +7,14 @@ export function useArticleNavigation(
   selectedFeed: Feed | null,
   markArticleRead: (guid: string) => void
 ) {
-  const [activeArticle, setActiveArticle] = React.useState<Article | null>(null);
+  const [activeGuid, setActiveGuid] = React.useState<string | null>(null);
+
+  const activeArticle = React.useMemo(() => {
+    if (!activeGuid) return null;
+    return filteredArticles.find((article) => article.guid === activeGuid)
+      || selectedFeed?.items.find((article) => article.guid === activeGuid)
+      || null;
+  }, [activeGuid, filteredArticles, selectedFeed]);
 
   // Track whether the modal is open from our perspective,
   // so popstate handler knows if it should act.
@@ -20,7 +27,7 @@ export function useArticleNavigation(
 
   const handleArticleSelect = React.useCallback((article: Article) => {
     markArticleRead(article.guid);
-    setActiveArticle(article);
+    setActiveGuid(article.guid);
     modalOpenRef.current = true;
 
     // Push a new history entry so the back gesture closes the modal
@@ -39,7 +46,7 @@ export function useArticleNavigation(
   const handlePrev = React.useCallback(() => {
     if (activeIndex <= 0) return;
     const nextArticle = filteredArticles[activeIndex - 1];
-    setActiveArticle(nextArticle);
+    setActiveGuid(nextArticle.guid);
     // Replace current entry — don't stack history for each swipe
     const next = `${window.location.pathname}${window.location.search}#${nextArticle.guid}`;
     window.history.replaceState({ modal: true }, '', next);
@@ -48,7 +55,7 @@ export function useArticleNavigation(
   const handleNext = React.useCallback(() => {
     if (activeIndex < 0 || activeIndex >= filteredArticles.length - 1) return;
     const nextArticle = filteredArticles[activeIndex + 1];
-    setActiveArticle(nextArticle);
+    setActiveGuid(nextArticle.guid);
     const next = `${window.location.pathname}${window.location.search}#${nextArticle.guid}`;
     window.history.replaceState({ modal: true }, '', next);
   }, [activeIndex, filteredArticles]);
@@ -57,7 +64,7 @@ export function useArticleNavigation(
   const handleModalClose = React.useCallback(() => {
     if (!modalOpenRef.current) return;
     modalOpenRef.current = false;
-    setActiveArticle(null);
+    setActiveGuid(null);
     // Pop the history entry we pushed on open
     window.history.back();
   }, []);
@@ -67,7 +74,7 @@ export function useArticleNavigation(
     const onPopState = () => {
       if (modalOpenRef.current) {
         modalOpenRef.current = false;
-        setActiveArticle(null);
+        setActiveGuid(null);
         // Hash is already gone because the browser popped the state —
         // no need to touch history again.
       }
@@ -85,7 +92,7 @@ export function useArticleNavigation(
     if (!target) return;
 
     markArticleRead(target.guid);
-    setActiveArticle(target);
+    setActiveGuid(target.guid);
     modalOpenRef.current = true;
     // Replace current entry (the page load already has this URL)
     window.history.replaceState({ modal: true }, '', window.location.href);

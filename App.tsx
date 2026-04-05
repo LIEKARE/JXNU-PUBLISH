@@ -65,11 +65,40 @@ const useCompiledData = () => {
   const [searchData, setSearchData] = React.useState<SearchItem[]>([]);
   const [error, setError] = React.useState<string | null>(null);
 
+  const load = React.useCallback(async () => {
+    try {
+      const bustCache = `?v=${Date.now()}`;
+      const [contentRes, searchRes] = await Promise.all([
+        fetch(`/generated/content-data.json${bustCache}`),
+        fetch(`/generated/search-index.json${bustCache}`),
+      ]);
+      if (!contentRes.ok) throw new Error(`加载 content-data 失败 (${contentRes.status})`);
+      if (!searchRes.ok) throw new Error(`加载 search-index 失败 (${searchRes.status})`);
+
+      const [contentJson, searchJson] = await Promise.all([
+        contentRes.json(),
+        searchRes.json() as Promise<SearchItem[]>,
+      ]);
+
+      if (!isValidCompiledContent(contentJson)) {
+        throw new Error('Invalid content-data.json structure');
+      }
+
+      setContentData(contentJson);
+      setSearchData(searchJson);
+      setError(null);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : '加载静态内容失败';
+      setError(message);
+      throw e;
+    }
+  }, []);
+
   React.useEffect(() => {
     let mounted = true;
-    const load = async () => {
+    const loadOnce = async () => {
       try {
-        const bustCache = typeof __BUILD_TIME__ === 'string' ? `?v=${__BUILD_TIME__}` : '';
+        const bustCache = typeof __BUILD_TIME__ === 'string' ? `?v=${__BUILD_TIME__}` : `?v=${Date.now()}`;
         const [contentRes, searchRes] = await Promise.all([
           fetch(`/generated/content-data.json${bustCache}`),
           fetch(`/generated/search-index.json${bustCache}`),
@@ -85,10 +114,10 @@ const useCompiledData = () => {
         if (!isValidCompiledContent(contentJson)) {
           throw new Error('Invalid content-data.json structure');
         }
-
         if (!mounted) return;
         setContentData(contentJson);
         setSearchData(searchJson);
+        setError(null);
       } catch (e) {
         if (!mounted) return;
         const message = e instanceof Error ? e.message : '加载静态内容失败';
@@ -96,20 +125,21 @@ const useCompiledData = () => {
       }
     };
 
-    load();
+    loadOnce();
     return () => {
       mounted = false;
     };
   }, []);
 
-  return { contentData, searchData, error };
+  return { contentData, searchData, error, reload: load };
 };
 
 const AppShell: React.FC<{
   mode: 'list' | 'dashboard';
   contentData: CompiledContent;
   searchData: SearchItem[];
-}> = ({ mode, contentData, searchData }) => {
+  onContentReload: () => Promise<void>;
+}> = ({ mode, contentData, searchData, onContentReload }) => {
   const { slug } = useParams();
   const navigate = useNavigate();
 
@@ -329,15 +359,16 @@ const AppShell: React.FC<{
               ? (activeArticle.schoolSlug || selectedFeedMeta.routeSlug)
               : selectedFeedMeta.routeSlug
             }#${activeArticle.guid}`
-            : ''
+              : ''
         }
+        onArticleSaved={onContentReload}
       />
     </div>
   );
 };
 
 const App: React.FC = () => {
-  const { contentData, searchData, error } = useCompiledData();
+  const { contentData, searchData, error, reload } = useCompiledData();
 
   if (error) {
     return (
@@ -361,9 +392,9 @@ const App: React.FC = () => {
 
   return (
     <Routes>
-      <Route path="/" element={<AppShell mode="list" contentData={contentData} searchData={searchData} />} />
-      <Route path="/school/:slug" element={<AppShell mode="list" contentData={contentData} searchData={searchData} />} />
-      <Route path="/dashboard" element={<AppShell mode="dashboard" contentData={contentData} searchData={searchData} />} />
+      <Route path="/" element={<AppShell mode="list" contentData={contentData} searchData={searchData} onContentReload={reload} />} />
+      <Route path="/school/:slug" element={<AppShell mode="list" contentData={contentData} searchData={searchData} onContentReload={reload} />} />
+      <Route path="/dashboard" element={<AppShell mode="dashboard" contentData={contentData} searchData={searchData} onContentReload={reload} />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );

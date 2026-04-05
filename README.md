@@ -209,6 +209,14 @@ Cloudflare Pages 统一部署（test/main 分支）核心 secrets：
 - `CLOUDFLARE_PAGES_URL`（main 分支对应生产域名）
 - `R2_PUBLIC_BASE_URL` / `R2_BUCKET` / `R2_S3_ENDPOINT` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`（启用大附件上传时）
 
+Cloudflare Pages Functions 在线编辑额外需要在 Pages 项目环境变量中配置：
+
+- `GITHUB_EDITOR_TOKEN`：GitHub token，至少具备当前仓库 `contents:write`
+- `GITHUB_REPO_OWNER`
+- `GITHUB_REPO_NAME`
+- `GITHUB_EDITOR_BRANCH`：建议固定为 `test`
+- `EDITOR_ACCESS_KEY`：可选但强烈建议配置；前端会要求输入这个共享密钥后才允许编辑
+
 ### D1 浏览计数
 
 Pages Functions 通过 D1 数据库记录卡片浏览量，需要在 Cloudflare Dashboard 中为 Pages 项目绑定 D1：

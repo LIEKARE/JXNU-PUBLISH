@@ -1,6 +1,7 @@
 import path from 'path';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import { cardEditorPlugin } from './server/card-editor-plugin';
 
 const buildVersion = new Date().toISOString().replace(/[:.]/g, '-');
 
@@ -27,7 +28,7 @@ export default defineConfig(() => {
       port: 3000,
       host: '0.0.0.0',
     },
-    plugins: [react(), swVersionPlugin()],
+    plugins: [react(), cardEditorPlugin(), swVersionPlugin()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
