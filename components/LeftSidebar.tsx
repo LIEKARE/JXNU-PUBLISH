@@ -17,7 +17,8 @@ import { FeedItem } from './FeedItem';
 import { Feed, FeedMeta } from '../types';
 import { CategoryNode } from '../hooks/use-feed-data';
 import { cn } from "@/lib/utils";
-import jxnuLogo from '../content/img/JXNUlogo.png';
+
+const DEFAULT_LOGO_SRC = '/icon.png';
 
 /* ── Shared types ── */
 
@@ -501,7 +502,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
           <div className="flex items-center justify-between w-full gap-3">
             <div onClick={handleBackToDashboard} className="cursor-pointer flex items-center gap-2.5 group min-w-0 flex-1">
               <div className="bg-white w-10 h-10 rounded-xl flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform overflow-hidden border border-border/40 shrink-0">
-                <img src={jxnuLogo} alt="JXNU" className="w-full h-full object-contain" />
+                <img src={DEFAULT_LOGO_SRC} alt="JXNU" className="w-full h-full object-contain" />
               </div>
               <h1 className="text-xl md:text-2xl leading-none font-black tracking-tight whitespace-nowrap">JXNU PUBLISH</h1>
             </div>

@@ -22,8 +22,9 @@ import { useToast } from '@/hooks/use-toast';
 import { useNow } from '@/hooks/use-now';
 import { getTimeWindowState, formatTimestamp } from '@/lib/time-window';
 import { CountdownBar, LiveCountdownBar } from './CountdownBar';
-import jxnuLogo from '../content/img/JXNUlogo.png';
 import { renderSimpleMarkdown } from '../lib/simple-markdown';
+
+const DEFAULT_BADGE_SRC = '/icon.png';
 
 interface NoticeDetailModalProps {
   article: Article | null;
@@ -45,7 +46,7 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = React.memo(({
   shareUrl,
 }) => {
   const { toast } = useToast();
-  const [badgeSrc, setBadgeSrc] = React.useState(jxnuLogo);
+  const [badgeSrc, setBadgeSrc] = React.useState(DEFAULT_BADGE_SRC);
   const openedAtRef = React.useRef(0);
   const modalBodyRef = React.useRef<HTMLDivElement | null>(null);
   const [contentReady, setContentReady] = React.useState(false);
@@ -80,7 +81,7 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = React.memo(({
 
   React.useEffect(() => {
     if (!article) return;
-    setBadgeSrc(article.badge || jxnuLogo);
+    setBadgeSrc(article.badge || DEFAULT_BADGE_SRC);
   }, [article]);
   const iconForAttachment = (type?: string, name?: string) => {
     const ext = (type || name?.split('.').pop() || 'file').toLowerCase();
@@ -282,7 +283,7 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = React.memo(({
                     alt="院徽"
                     className="w-full h-full object-cover"
                     loading="lazy"
-                    onError={() => setBadgeSrc(jxnuLogo)}
+                    onError={() => setBadgeSrc(DEFAULT_BADGE_SRC)}
                   />
                 </div>
                 <div className="min-w-0">

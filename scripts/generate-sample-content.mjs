@@ -220,12 +220,17 @@ const makeCardFrontmatter = ({
       }),
     ];
 
+  const descriptionLines = String(description || '')
+    .split(/\r?\n/)
+    .map((line) => `  ${line}`);
+
   return [
     '---',
     `id: ${toYamlString(id)}`,
     `school_slug: ${toYamlString(school.slug)}`,
     `title: ${toYamlString(title)}`,
-    `description: ${toYamlString(description)}`,
+    'description: >-',
+    ...descriptionLines,
     `published: ${published}`,
     `category: ${toYamlString(category)}`,
     `tags: ${toYamlArray(tags)}`,
@@ -258,7 +263,7 @@ const main = async () => {
     const tags = makeAiTags(i);
     const category = CATEGORIES[i % CATEGORIES.length];
     const cover = i % 3 === 0 ? '' : `https://picsum.photos/seed/ai-${ordinal}/1280/720`;
-    const badge = i % 2 === 0 ? '/JXNUlogo.png' : '';
+    const badge = i % 2 === 0 ? '/icon.png' : '';
     const pinned = i === 0 || i === 15;
     const extraUrl = i % 4 === 0 ? `https://example.com/original/ai/${id}` : '';
     const title = makeAiTitle(i, ordinal);

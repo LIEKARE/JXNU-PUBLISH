@@ -18,14 +18,14 @@ export function buildFeedEntries(contentData: CompiledContent): Array<{ meta: Fe
       hiddenInSidebar: true,
       routeSlug: 'all-schools',
     },
-    feed: {
-      url: '/',
-      title: '全校汇总',
-      description: '全校全部通知流',
-      image: '/img/JXNUlogo.png',
-      category: '全校',
-      items: [],
-    },
+      feed: {
+        url: '/',
+        title: '全校汇总',
+        description: '全校全部通知流',
+        image: '/icon.png',
+        category: '全校',
+        items: [],
+      },
   });
 
   for (const school of contentData.schools) {

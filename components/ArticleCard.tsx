@@ -7,9 +7,10 @@ import { Calendar, ExternalLink, ImageOff, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getTimeWindowState, formatTimestamp } from "@/lib/time-window";
 import { CountdownBar, LiveCountdownBar } from './CountdownBar';
-import jxnuLogo from '../content/img/JXNUlogo.png';
 import { renderHighlightedText, renderSimpleMarkdown } from '../lib/simple-markdown';
 import { getResponsiveCoverAttrs } from '../services/responsiveImage';
+
+const DEFAULT_LOGO_SRC = '/icon.png';
 
 const MAX_VISIBLE_TAGS = 4;
 const RESERVED_TAGS = ['学院通知'];
@@ -59,7 +60,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = React.memo(({
   const hasValidThumbnail = !imgError && Boolean(article.thumbnail);
   const compactLogoMode = isPlaceholderCover || /\/img\/schoolicon\//.test(thumbnailUrl) || /\/JXNUlogo\.png$/.test(thumbnailUrl);
   const showFullCover = !isCompactNoCover && hasValidThumbnail && !compactLogoMode;
-  const placeholderCover = thumbnailUrl || jxnuLogo;
+  const placeholderCover = thumbnailUrl || DEFAULT_LOGO_SRC;
   const responsiveCover = useMemo(() => getResponsiveCoverAttrs(thumbnailUrl), [thumbnailUrl]);
 
   const preview = useMemo(() => {

@@ -319,7 +319,7 @@ const parseConfig = async () => {
       slug: ensureString(item.slug, `schools[${index}].slug`, CONFIG_PATH),
       name: ensureString(item.name, `schools[${index}].name`, CONFIG_PATH),
       shortName: String(item.short_name || '').trim(),
-      icon: String(item.icon || '').trim() || '/img/JXNUlogo.png',
+      icon: String(item.icon || '').trim() || '/icon.png',
       order: Number.isFinite(Number(item.order)) ? Number(item.order) : index,
       subscriptions,
     };
@@ -471,7 +471,7 @@ const loadCards = async ({ schoolMap, subscriptionMap }) => {
     const schoolShortName = String(school?.shortName || schoolName);
     const cover = String(parsed.data.cover || '');
     const sender = String(parsed.data.source?.sender || '').trim();
-    const fallbackCover = String(school?.icon || '/img/JXNUlogo.png');
+    const fallbackCover = String(school?.icon || '/icon.png');
 
     notices.push({
       guid: id,
@@ -663,9 +663,33 @@ const syncStaticAssets = async () => {
     fs.mkdir(PUBLIC_ATTACHMENTS_DIR, { recursive: true }),
   ]);
 
+  const cpIfExists = async (source, target) => {
+    try {
+      await fs.access(source);
+    } catch (error) {
+      if (error && error.code === 'ENOENT') return;
+      throw error;
+    }
+    await fs.cp(source, target, { recursive: true, force: true });
+  };
+
+  const cpFilteredIfExists = async (source, target, filter) => {
+    try {
+      await fs.access(source);
+    } catch (error) {
+      if (error && error.code === 'ENOENT') return;
+      throw error;
+    }
+    await fs.cp(source, target, {
+      recursive: true,
+      force: true,
+      filter,
+    });
+  };
+
   const criticalTasks = [
-    { label: `copy ${path.relative(ROOT, CARD_COVERS_DIR)}`, promise: fs.cp(CARD_COVERS_DIR, PUBLIC_COVERS_DIR, { recursive: true, force: true }) },
-    { label: `copy ${path.relative(ROOT, CONTENT_IMG_DIR)}`, promise: fs.cp(CONTENT_IMG_DIR, PUBLIC_IMG_DIR, { recursive: true, force: true }) },
+    { label: `copy ${path.relative(ROOT, CARD_COVERS_DIR)}`, promise: cpIfExists(CARD_COVERS_DIR, PUBLIC_COVERS_DIR) },
+    { label: `copy ${path.relative(ROOT, CONTENT_IMG_DIR)}`, promise: cpIfExists(CONTENT_IMG_DIR, PUBLIC_IMG_DIR) },
   ];
 
   if (R2_PUBLIC_BASE_URL) {
@@ -673,25 +697,21 @@ const syncStaticAssets = async () => {
     await fs.mkdir(PUBLIC_ATTACHMENTS_DIR, { recursive: true });
     criticalTasks.push({
       label: 'copy filtered attachments',
-      promise: fs.cp(CONTENT_ATTACHMENTS_DIR, PUBLIC_ATTACHMENTS_DIR, {
-        recursive: true,
-        force: true,
-        filter: async (src) => {
-          try {
-            const stat = await fs.stat(src);
-            if (stat.isDirectory()) return true;
-            if (!stat.isFile()) return false;
-            return stat.size <= ATTACHMENT_R2_THRESHOLD_BYTES;
-          } catch {
-            return false;
-          }
-        },
+      promise: cpFilteredIfExists(CONTENT_ATTACHMENTS_DIR, PUBLIC_ATTACHMENTS_DIR, async (src) => {
+        try {
+          const stat = await fs.stat(src);
+          if (stat.isDirectory()) return true;
+          if (!stat.isFile()) return false;
+          return stat.size <= ATTACHMENT_R2_THRESHOLD_BYTES;
+        } catch {
+          return false;
+        }
       }),
     });
   } else {
     criticalTasks.push({
       label: `copy ${path.relative(ROOT, CONTENT_ATTACHMENTS_DIR)}`,
-      promise: fs.cp(CONTENT_ATTACHMENTS_DIR, PUBLIC_ATTACHMENTS_DIR, { recursive: true, force: true }),
+      promise: cpIfExists(CONTENT_ATTACHMENTS_DIR, PUBLIC_ATTACHMENTS_DIR),
     });
   }
 
