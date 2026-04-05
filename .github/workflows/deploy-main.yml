@@ -88,7 +88,12 @@ jobs:
 
       
       - name: Sync all remaining media to R2 (Fallback for 20k limits)
+        if: ${{ env.R2_BUCKET != '' && env.R2_S3_ENDPOINT != '' && secrets.R2_ACCESS_KEY_ID != '' && secrets.R2_SECRET_ACCESS_KEY != '' }}
         run: node scripts/sync-media-to-r2.mjs
+
+      - name: Skip R2 sync when R2 is not configured
+        if: ${{ !(env.R2_BUCKET != '' && env.R2_S3_ENDPOINT != '' && secrets.R2_ACCESS_KEY_ID != '' && secrets.R2_SECRET_ACCESS_KEY != '') }}
+        run: echo "R2 not configured, skipping sync-media-to-r2"
 
       - name: Verify build artifacts
         run: |
